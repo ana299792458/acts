@@ -7,6 +7,10 @@ import sys
 import os
 
 from acts.examples import Sequencer, GenericDetector, RootParticleReader
+from acts.examples.simulation import ParticleSelectorConfig
+from acts.examples.reconstruction import TrackSelectorConfig
+sys.path.append('/Users/achalume/alice/actsdir/source/Examples/Scripts/Python')
+from alice3 import buildALICE3Geometry
 
 import acts
 
@@ -19,19 +23,32 @@ def getArgumentParser():
     parser.add_argument(
         "-i",
         "--indir",
+        type=Path,
         dest="indir",
         help="Directory with input root files",
-        default="./",
+        default="~/alice/actsdir/test-ckf/input/",
     )
     parser.add_argument(
         "-o",
         "--output",
+        type=Path,
         dest="outdir",
         help="Output directory for new ntuples",
         default="./",
     )
+
     parser.add_argument(
-        "-n", "--nEvents", dest="nEvts", help="Number of events to run over", default=1
+        "-g",
+        "--geodir"
+        "geo_dir",
+        type=Path,
+        dest="geo_dir",
+        help="Input directory containing the ALICE3 standalone geometry.",
+        default="/Users/achalume/alice/actsdir/"
+    )
+
+    parser.add_argument(
+        "-n", "--nEvents", dest="nEvts", help="Number of events to run over", default=10
     )
     parser.add_argument(
         "--sf_maxSeedsPerSpM",
@@ -45,7 +62,7 @@ def getArgumentParser():
         dest="sf_cotThetaMax",
         help="cot of maximum theta angle",
         type=float,
-        default=7.40627,
+        default=27.2899,
     )
     parser.add_argument(
         "--sf_sigmaScattering",
@@ -73,7 +90,7 @@ def getArgumentParser():
         dest="sf_maxPtScattering",
         help="maximum Pt for scattering cut in GeV",
         type=float,
-        default=10.0,
+        default=100.0,
     )
     parser.add_argument(
         "--sf_deltaRMin",
@@ -90,6 +107,28 @@ def getArgumentParser():
         default=60.0,
     )
 
+    parser.add_argument(
+        "--no-material", 
+        action="store_true", 
+        help="Decorate material to the geometry"
+    )
+
+    parser.add_argument(
+    "--etaMin", 
+    dest="etaMin", 
+    help="minimum value for eta",
+    type=float,
+    default=-4.0
+    )
+
+    parser.add_argument(
+    "--etaMax", 
+    dest="etaMax", 
+    help="maximum value for eta",
+    type=float,
+    default=4.0
+    )
+
     return parser
 
 
@@ -101,20 +140,23 @@ def runCKFTracks(
     field,
     outputDir: Path,
     NumEvents=1,
+    EtaMin=-4.0,
+    EtaMax=4.0,
     truthSmearedSeeded=False,
     truthEstimatedSeeded=False,
     outputCsv=True,
     inputParticlePath: Optional[Path] = None,
     s=None,
     MaxSeedsPerSpM=1,
-    CotThetaMax=7.40627,
-    SigmaScattering=5,
+    CotThetaMax=27.2899,
+    SigmaScattering=5.0,
     RadLengthPerSeed=0.1,
     ImpactMax=3.0,
-    MaxPtScattering=10.0,
+    MaxPtScattering=100.0,
     DeltaRMin=1.0,
     DeltaRMax=60.0,
 ):
+    outputDir = outputDir
 
     from acts.examples.simulation import (
         addParticleGun,
@@ -138,9 +180,9 @@ def runCKFTracks(
 
     s = s or acts.examples.Sequencer(
         events=int(NumEvents),
-        numThreads=-1,
+        numThreads=-1, #-1 for multiple thread modes. Need sequential (1) for reproducibility.
         logLevel=acts.logging.INFO,
-        outputDir=outputDir,
+        outputDir=str(outputDir),
     )
     for d in decorators:
         s.addContextDecorator(d)
@@ -148,12 +190,13 @@ def runCKFTracks(
     outputDir = Path(outputDir)
 
     if inputParticlePath is None:
+        print('\nPARTICLE GUN USED\n')
         addParticleGun(
             s,
-            EtaConfig(-2.0, 2.0),
-            ParticleConfig(4, acts.PdgParticle.eMuon, True),
+            EtaConfig(EtaMin, EtaMax, uniform=True),
+            ParticleConfig(10, acts.PdgParticle.eMuon, True), #4
             PhiConfig(0.0, 360.0 * u.degree),
-            multiplicity=2,
+            multiplicity=1, #2
             rnd=rnd,
         )
     else:
@@ -175,6 +218,11 @@ def runCKFTracks(
         trackingGeometry,
         field,
         rnd=rnd,
+        preSelectParticles=ParticleSelectorConfig(
+            eta=(-4.0, 4.0), pt=(500 * u.MeV, None), removeNeutral=True),
+        pMin=500 * u.MeV,
+        enableInteractions=True,
+        outputDirRoot=outputDir,
     )
 
     addDigitization(
@@ -189,13 +237,13 @@ def runCKFTracks(
         s,
         trackingGeometry,
         field,
-        TruthSeedRanges(pt=(500.0 * u.MeV, None), nHits=(9, None)),
+        TruthSeedRanges(pt=(500.0 * u.MeV, None), eta=(EtaMin,EtaMax), nHits=(9, None)),
         ParticleSmearingSigmas(pRel=0.01),  # only used by SeedingAlgorithm.TruthSmeared
         SeedFinderConfigArg(
             r=(None, 200 * u.mm),  # rMin=default, 33mm
             deltaR=(DeltaRMin * u.mm, DeltaRMax * u.mm),
             collisionRegion=(-250 * u.mm, 250 * u.mm),
-            z=(-2000 * u.mm, 2000 * u.mm),
+            z=(-1300 * u.mm, 1300 * u.mm),
             maxSeedsPerSpM=MaxSeedsPerSpM,
             cotThetaMax=CotThetaMax,
             sigmaScattering=SigmaScattering,
@@ -214,12 +262,14 @@ def runCKFTracks(
         geoSelectionConfigFile=geometrySelection,
         outputDirRoot=outputDir,
         rnd=rnd,  # only used by SeedingAlgorithm.TruthSmeared
+        logLevel=acts.logging.DEBUG,
     )
 
     addCKFTracks(
         s,
         trackingGeometry,
         field,
+        TrackSelectorConfig(pt=(500.0 * u.MeV, None), nMeasurementsMin=7),
         outputDirRoot=outputDir,
         outputDirCsv=outputDir / "csv" if outputCsv else None,
     )
@@ -233,9 +283,19 @@ if "__main__" == __name__:
     Inputdir = options.indir
     Outputdir = options.outdir
 
-    srcdir = Path(__file__).resolve().parent.parent.parent.parent
+    #srcdir = Path(__file__).resolve().parent.parent.parent.parent
+    srcdir = Path.cwd().parent
 
-    detector, trackingGeometry, decorators = GenericDetector.create()
+    geo_example_dir = Path(options.geo_dir)
+
+    options.outdir.mkdir(exist_ok=True, parents=True)
+
+    assert geo_example_dir.exists(), "Detector example input directory missing"
+
+    detector, trackingGeometry, decorators = buildALICE3Geometry(
+        geo_example_dir,
+        material=not options.no_material,
+    ) # GenericDetector.create()
 
     field = acts.ConstantBField(acts.Vector3(0, 0, 2 * u.T))
 
@@ -247,16 +307,22 @@ if "__main__" == __name__:
         trackingGeometry,
         decorators,
         field=field,
-        geometrySelection=srcdir
-        / "Examples/Algorithms/TrackFinding/share/geoSelection-genericDetector.json",
-        digiConfigFile=srcdir
-        / "Examples/Algorithms/Digitization/share/default-smearing-config-generic.json",
+        geometrySelection=srcdir 
+        / "acts/bin/geoSelection-alice3-cfg10.json",
+        #srcdir
+        #/ "Examples/Algorithms/TrackFinding/share/geoSelection-genericDetector.json",
+        digiConfigFile=srcdir 
+        / "acts/bin/alice3-smearing-config.json",
+        #srcdir
+        #/ "Examples/Algorithms/Digitization/share/default-smearing-config-generic.json",
         outputCsv=True,
         truthSmearedSeeded=False,
         truthEstimatedSeeded=False,
         inputParticlePath=inputParticlePath,
         outputDir=Outputdir,
         NumEvents=options.nEvts,
+        EtaMin=options.etaMin,
+        EtaMax=options.etaMax,
         MaxSeedsPerSpM=options.sf_maxSeedsPerSpM,
         CotThetaMax=options.sf_cotThetaMax,
         SigmaScattering=options.sf_sigmaScattering,

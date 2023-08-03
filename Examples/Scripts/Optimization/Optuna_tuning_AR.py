@@ -34,8 +34,8 @@ from optuna.samplers import TPESampler
 
 n_events = 10
 n_trials = 100
-run_name = "n"+str(n_events)+"t"+str(n_trials) + "e-33" + "_FR_fatras-44"
-#run_name2 = "FR_rerunckf_optimparams_fatras-44"
+run_name = "n"+str(n_events)+"t"+str(n_trials) + "e-33" + "_AR_fatras-44"
+#run_name2 = "AR_rerunckf_optimparams_fatras-44"
 
 etaRanges = [(-3,-2), (-2,-1), (-1,0), (0,1), (1,2), (2,3)]#[(-4,-3), (-3,-2), (-2,-1), (-1,0), (0,1), (1,2), (2,3), (3,4)]
 nEta = len(etaRanges)
@@ -104,16 +104,16 @@ class Objective:
     def __call__(self, trial):
         params = []
 
-        #cotThetaMax_border = 0.2
-        #cotThetaMax_low = (1-cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(self.EtaMin)))))
-        #cotThetaMax_high = (1+cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(self.EtaMax)))))
-        #cotThetaMax_ini = (cotThetaMax_low + cotThetaMax_high) /2
+        cotThetaMax_border = 0.2
+        cotThetaMax_low = (1-np.sign(self.EtaMin+0.1)*cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(self.EtaMin)))))
+        cotThetaMax_high = (1+np.sign(self.EtaMax-0.1)*cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(self.EtaMax)))))
+        cotThetaMax_ini = (cotThetaMax_low + cotThetaMax_high) /2
 
-        #print(f'\n\n cotThetaMax_inirange: [{cotThetaMax_low}, {cotThetaMax_high}] & ini: {cotThetaMax_ini}')
+        print(f'\n\n cotThetaMax_inirange: [{cotThetaMax_low}, {cotThetaMax_high}] & ini: {cotThetaMax_ini}')
 
         maxSeedsPerSpM = trial.suggest_int("maxSeedsPerSpM", 0, 10)
         params.append(maxSeedsPerSpM)
-        cotThetaMax = trial.suggest_float("cotThetaMax", -28.0, 28.0)
+        cotThetaMax = trial.suggest_float("cotThetaMax", cotThetaMax_low, cotThetaMax_high)
         params.append(cotThetaMax)
         sigmaScattering = trial.suggest_float("sigmaScattering", 0.2, 10)
         params.append(sigmaScattering)
@@ -138,8 +138,8 @@ class Objective:
             "deltaRMax",
         ]
 
-        outputDir = Path(srcDir / "Optuna_output_CKF/fixed_etaRange")
-        outputfile = srcDir / "Optuna_output_CKF/fixed_etaRange/performance_ckf.root"
+        outputDir = Path(srcDir / "Optuna_output_CKF")
+        outputfile = srcDir / "Optuna_output_CKF/performance_ckf.root"
         outputDir.mkdir(exist_ok=True)
         run_ckf(params, keys, outputDir, self.EtaMin, self.EtaMax)
         rootFile = uproot.open(outputfile)
@@ -202,14 +202,14 @@ def main():
         # Initializing the objective (score) function
         objective = Objective(k_dup, k_time, EtaMin, EtaMax)
 
-        #cotThetaMax_border = 0.2
-        #cotThetaMax_low = (1-cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(EtaMin)))))
-        #cotThetaMax_high = (1+cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(EtaMax)))))
-        #cotThetaMax_ini = (cotThetaMax_low + cotThetaMax_high) /2
+        cotThetaMax_border = 0.2
+        cotThetaMax_low = (1-cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(EtaMin)))))
+        cotThetaMax_high = (1+cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(EtaMax)))))
+        cotThetaMax_ini = (cotThetaMax_low + cotThetaMax_high) /2
 
         start_values = {
             "maxSeedsPerSpM": 1,
-            "cotThetaMax": 27.2899,
+            "cotThetaMax": cotThetaMax_ini, #0.5, #27.2899,
             "sigmaScattering": 5.,
             "radLengthPerSeed": 0.1,
             "impactMax": 3.,
@@ -240,16 +240,20 @@ def main():
         study.optimize(objective, n_trials=n_trials)
 
         # Printout the best trial values
-        print("Best Trial until now", flush=True)
-        for key, value in study.best_trial.params.items():
-            print(f"    {key}: {value}", flush=True)
+        if study.best_trial.params.items() != {}:
+            print("Best Trial until now", flush=True)
+            for key, value in study.best_trial.params.items():
+                print(f"    {key}: {value}", flush=True)
 
-        best_values = {
-        "best_trial": study.best_trial.number,
-        "efficiency": objective.res["eff"][study.best_trial.number],
-        "fakerate": objective.res["fakerate"][study.best_trial.number],
-        "duplicaterate": objective.res["duplicaterate"][study.best_trial.number]
-        }
+            best_values = {
+            "best_trial": study.best_trial.number,
+            "efficiency": objective.res["eff"][study.best_trial.number],
+            "fakerate": objective.res["fakerate"][study.best_trial.number],
+            "duplicaterate": objective.res["duplicaterate"][study.best_trial.number]
+            }
+        else:
+            print("All trial failed! No Best Trial until now", flush=True)
+            best_values = {}
 
         print(f"\n best_values: {best_values}")
 
@@ -270,7 +274,7 @@ def main():
     # Then run ckf.py in each range with the optimized parameters:
 
     # for debug if optimization already done and json file exists
-    #etaRanges = [ (-4,-3), (-3,-2), (-2,-1), (-1,0), (0,1), (1,2), (2,3), (3,4) ]
+    #etaRanges = [(3,4), (2,3), (1,2), (0,1), (-4,-3), (-3,-2), (-2,-1), (-1,0)] #[(-4,-3), (-3,-2), (-2,-1), (-1,0), (0,1), (1,2), (2,3), (3,4)]
     #nEta = len(etaRanges)
     #outputDir = Path("OptunaResults")
     #outputFile = "results_optuna_"+run_name+".txt" 
@@ -282,7 +286,6 @@ def main():
     # Read the optimized parameters from the outputed JSON file:
     eta_ranges = []
     parameters = []
-
     with open(outputDir / outputFile, "r") as fp:
         content = fp.read()
         ranges = content.strip().split("\n\n")
@@ -324,6 +327,7 @@ def main():
         print('\n')
 
         run_ckf(params, keys, outputPath_eta, EtaMin, EtaMax)
+    
 
     tot_time = (time.time()-start_time) /60
     print(f'Optim duration: {optim_time:.2f} min')
@@ -406,11 +410,11 @@ def main():
 
 
     # Merge the root files:
-    if len(etaRanges) >= 3:
+    if len(etaRanges) >= 3 :
         print("\n\nMerging outputed performance_ckf.root for each eta range...")
         subprocess.call(["python3", "Examples/Scripts/Optimization/mergeRootFiles.py", "-o", "Optuna", "-r", run_name])
         print("Done")
-    
+
 
 if __name__ == "__main__":
     main()

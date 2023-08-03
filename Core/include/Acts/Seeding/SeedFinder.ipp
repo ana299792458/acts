@@ -10,6 +10,7 @@
 #include <cmath>
 #include <numeric>
 #include <type_traits>
+#include <iostream>
 
 namespace Acts {
 
@@ -246,10 +247,12 @@ SeedFinder<external_spacepoint_t, platform_t>::getCompatibleDoublets(
 
     for (; min_itr != otherSPs.end(); ++min_itr) {
       const auto& otherSP = *min_itr;
+      //std::cout << "deltaR: " << deltaR << "\n";
+      //std::cout << "deltaRMinSP: " << deltaRMinSP << "\n";
+      //std::cout << "deltaRMaxSP: " << deltaRMaxSP << "\n";
 
       if constexpr (candidateType == Acts::SpacePointCandidateType::eBottom) {
         deltaR = (rM - otherSP->radius());
-
         // if r-distance is too small, try next SP in bin
         if (deltaR < deltaRMinSP) {
           break;
@@ -264,6 +267,7 @@ SeedFinder<external_spacepoint_t, platform_t>::getCompatibleDoublets(
 
         // if r-distance is too big, try next SP in bin
         if (deltaR > deltaRMaxSP) {
+          //std::cout << "deltaRMaxSP: " << deltaRMaxSP << "\n";
           break;
         }
         // if r-distance is too small, try next SP in bin
@@ -305,9 +309,15 @@ SeedFinder<external_spacepoint_t, platform_t>::getCompatibleDoublets(
         // check if duplet cotTheta is within the region of interest
         // cotTheta is defined as (deltaZ / deltaR) but instead we multiply
         // cotThetaMax by deltaR to avoid division
-        if (deltaZ > m_config.cotThetaMax * deltaR or
-            deltaZ < -m_config.cotThetaMax * deltaR) {
+  
+        //std::cout << "deltaZ:" 
+        //  << deltaZ << "vs m_config.cotThetaMax * deltaR:"
+        //  << m_config.cotThetaMax * deltaR << "\n" ;
+        if (deltaZ > abs(m_config.cotThetaMax) * deltaR or
+            deltaZ < -abs(m_config.cotThetaMax) * deltaR) {
           continue;
+        } else {
+          //std::cout << "cotThetaMax * deltaR condition not fulfilled" << "\n";
         }
         // if z-distance between SPs is within max and min values
         if (deltaZ > m_config.deltaZMax or deltaZ < -m_config.deltaZMax) {

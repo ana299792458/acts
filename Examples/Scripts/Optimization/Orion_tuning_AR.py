@@ -36,15 +36,15 @@ srcDir = Path(__file__).resolve().parent
 
 n_events = 10
 n_trials = 100
-run_name = "n"+str(n_events)+"t"+str(n_trials) + "e34" + "_FR_fatras-44"
-#run_name2 = "FR_rerunckf_optimparams_fatras-44"
+run_name = "n"+str(n_events)+"t"+str(n_trials) + "e34" + "_AR_fatras-44"
 
-etaRanges = [(3,4)] #[(-4,-3), (-3,-2), (-2,-1), (-1,0), (0,1), (1,2), (2,3), (3,4)] #[(3,4), (2,3), (1,2), (0,1), (-1,0), (-2,-1), (-3,-2), (-4,-3)] #
+etaRanges = [(3,4)]#[(-4,-3), (-3,-2), (-2,-1), (-1,0), (0,1), (1,2), (2,3), (3,4)] #[(3,4), (2,3), (1,2), (0,1), (-1,0), (-2,-1), (-3,-2), (-4,-3)] #
 nEta = len(etaRanges)
 
 outputDir = Path("OrionResults")
 outputDir.mkdir(exist_ok=True)
 #log_name = 'log-orion_'+run_name+'.txt'
+
 
 def run_ckf(params, names, outDir, EtaMin=-4.0, EtaMax=4.0):
 
@@ -168,7 +168,6 @@ class Objective:
 
 def main():
 
-
     k_dup = 7
     k_time = 7
 
@@ -192,27 +191,33 @@ def main():
 
         # Defining the parameter space
 
+        cotThetaMax_border = 0.2
+        cotThetaMax_low = (1-np.sign(EtaMin+0.1)*cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(EtaMin)))))
+        cotThetaMax_high = (1+np.sign(EtaMin-0.1)*cotThetaMax_border)/(np.tan(2*np.arctan(np.exp(-(EtaMax)))))
+        cotThetaMax_ini = (cotThetaMax_low + cotThetaMax_high) /2
+        print(f'\n cotThetaMax_inirange: [{cotThetaMax_low}, {cotThetaMax_high}] & ini: {cotThetaMax_ini}\n')
+
         space = {
             "maxSeedsPerSpM": "uniform(0,10,discrete=True, default_value=1)",
-            "cotThetaMax": "uniform(-28.0,28.0, default_value=27.2899)",
+            "cotThetaMax": f"uniform({cotThetaMax_low}, {cotThetaMax_high}, default_value= {cotThetaMax_ini})",#, default_value=27.2899
             "sigmaScattering": "uniform(0.2,10.0, default_value=5.)",
-            "radLengthPerSeed": "uniform(.001,0.1, default_value=0.1)", 
-            "impactMax": "uniform(0.1,25.0, default_value=3.)", 
-            "maxPtScattering": "uniform(1.0, 100.0, default_value=100.0)", 
-            "deltaRMin": "uniform(0.25, 5.0, default_value=1.0)", 
-            "deltaRMax": "uniform(40.0,80.0, default_value=60.0)", 
+            "radLengthPerSeed": "uniform(.001,0.1, default_value=0.1)",
+            "impactMax": "uniform(0.1,25.0, default_value=3.)",
+            "maxPtScattering": "uniform(1.0, 100.0, default_value=100.0)",
+            "deltaRMin": "uniform(0.25, 5.0, default_value=1.0)",
+            "deltaRMax": "uniform(40.0,80.0, default_value=60.0)",
         }
 
         # Remove storage file if already exists (conflicts with present run if not deleted)
-        if os.path.exists("./OrionResults/db_FR.pkl"):
-            os.remove("./OrionResults/db_FR.pkl")
+        if os.path.exists("./OrionResults/db_AR.pkl"):
+            os.remove("./OrionResults/db_AR.pkl")
 
         # location to store metadata
         storage = {
             "type": "legacy",
             "database": {
                 "type": "pickleddb",
-                "host": "./OrionResults/db_FR.pkl",
+                "host": "./OrionResults/db_AR.pkl",
             },
         }
 
@@ -302,16 +307,24 @@ def main():
     optim_time = (time.time()-start_time) /60
     print(f'Optim duration: {optim_time:.2f} min')
 
+
     # Then run ckf.py in each range with the optimized parameters:
     
     # for debug if optimization already done and json file exists
     #etaRanges = [ (-4,-3), (-3,-2), (-2,-1), (-1,0), (0,1), (1,2), (2,3), (3,4) ]
     #nEta = len(etaRanges)
     #outputDir = Path("OrionResults")
-    outputFile = "results_orion_"+run_name+".txt"
+    #outputFile = "results_orion_"+run_name+".txt"
+    #outputDir = Path("/Users/achalume/alice/actsdir/test-ckf/output/n10/")
+    #outputFile = "result_ckfDefault_n10e-44.txt"
+    #run_name = "ckfDefault_n10e-44"
 
     print('Parameter optimization done. \nRun of CKF algo with optimized params in each eta range.')
 
+
+    # If want to read ckf with default params:
+    #outputFile = "results_ckf_default.txt"
+    #run_name = "DEFAULT_ckf_ONLY"
 
     # Read the optimized parameters from the outputed JSON file:
     eta_ranges = []
@@ -344,7 +357,8 @@ def main():
         print("\n Eta Ranges:", eta_ranges)
         print("\n Parameters:", parameters)
 
-    with open(outputDir / outputFile2, "a") as fp:
+
+    with open(outputDir / outputFile, "a") as fp:
         fp.write(f'-----------\n')
         for i in range(nEta):
             EtaMin = eta_ranges[i][0]
@@ -352,6 +366,7 @@ def main():
             params = parameters[i]
             outputDir_eta = "Orion_output_CKF/Orion_output_CKF_"+str(EtaMin)+"_"+str(EtaMax)+"_"+run_name
             outputPath_eta = Path(srcDir / outputDir_eta )
+            #outputPath_eta = Path(outputDir / subDir )
             res = {"eff": [], "fakerate": [], "duplicaterate":[], "score": []}
 
             print(f'\netaRange from code: {EtaMin,EtaMax}')
@@ -383,17 +398,18 @@ def main():
             fp.write(f'res: {res}\n')
             fp.write('\n')
 
-            
-    #tot_time = (time.time()-start_time) /60
-    #print(f'Optim duration: {optim_time:.2f} min')
-    #print(f'Tot duration: {tot_time:.2f} min')
+    
+    tot_time = (time.time()-start_time) /60
+    print(f'Optim duration: {optim_time:.2f} min')
+    print(f'Tot duration: {tot_time:.2f} min')
 
 
     if len(etaRanges) >= 3:
         # Merge the root files:
         print("Merging outputed performance_ckf.root for each eta range...")
-        subprocess.call(["python3", "Examples/Scripts/Optimization/mergeRootFiles.py", "-o", "Orion", "-r", run_name2])
+        subprocess.call(["python3", "Examples/Scripts/Optimization/mergeRootFiles.py", "-o", "Orion", "-r", run_name])
         print("Done")
+    
 
 
 if __name__ == "__main__":
